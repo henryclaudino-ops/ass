@@ -68,7 +68,7 @@ app.MapDelete("/api/Corridas/{id:int}", (int id) =>
 });
 
 app.Run();
-
+//tsss
 
 record CavalosDto(int Id, string Corredor);
 record CavalosEntradaDto(string Corredor);
