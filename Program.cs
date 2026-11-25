@@ -1,24 +1,53 @@
+
+using Corridadecavalos.Data;
+using Corridadecavalos.Dtos;
+using Corridadecavalos.Models;
+using Microsoft.EntityFrameworkCore;
+
 var builder = WebApplication.CreateBuilder(args);
+
+builder.Services.AddDbContext<CavalosDbContext>(options =>
+    options.UseSqlite("Data Source=cavalos.db"));
+
 var app = builder.Build();
 
-//Criar nossa lista
-var Cavalos = new List<CavalosDto>
+// Tratamento de exceções
+app.UseExceptionHandler(errorApp =>
 {
-    new CavalosDto(1, "Meisho Doto"),
-    new CavalosDto(2, "TM Opera O")
-};
+    errorApp.Run(async context =>
+    {
+        context.Response.StatusCode = 500;
+        await context.Response.WriteAsJsonAsync(new
+        {
+            erro = "Erro interno no servidor."
+        });
+    });
+});
 
+// Criar o banco de dados caso não exista
+using (var scope = app.Services.CreateScope())
+{
+    var banco = scope.ServiceProvider
+        .GetRequiredService<CavalosDbContext>();
 
+    await banco.Database.EnsureCreatedAsync();
+}
+
+// Página inicial
 app.MapGet("/", () => "API da corrida de cavalos está no ar");
 
-app.MapGet("/api/Corridas", () =>
+// Listar todos os cavalos
+app.MapGet("/api/Cavalos", async (CavalosDbContext banco) =>
 {
+    var Cavalos = await banco.Cavalos.ToListAsync();
+
     return Results.Ok(Cavalos);
 });
 
-app.MapGet("/api/Cavalos/{id:int}", (int id) =>
+// Buscar cavalo pelo ID
+app.MapGet("/api/Cavalos/{id:int}", async (int id, CavalosDbContext banco) =>
 {
-    var Corridas = Cavalos.Find(x =>x.Id == id);
+    var Corridas = await banco.Cavalos.FindAsync(id);
 
     if (Corridas is null)
     {
@@ -28,47 +57,63 @@ app.MapGet("/api/Cavalos/{id:int}", (int id) =>
     return Results.Ok(Corridas);
 });
 
-app.MapPost("/api/Cavalos", (CavalosEntradaDto dados) =>
+// Cadastrar um cavalo
+app.MapPost("/api/Cavalos", async (CavalosEntradaDto dados, CavalosDbContext banco) =>
 {
-    int proximoId = Cavalos.Count + 1;
+    if (string.IsNullOrWhiteSpace(dados.Corredor))
+    {
+        return Results.BadRequest("O corredor é obrigatório.");
+    }
 
-    var novoCavalo = new CavalosDto(proximoId, dados.Corredor);
+    var novoCavalo = new Cavalo
+    {
+        Corredor = dados.Corredor
+    };
 
-    Cavalos.Add(novoCavalo);
+    banco.Cavalos.Add(novoCavalo);
+
+    await banco.SaveChangesAsync();
 
     return Results.Created($"/api/Cavalos/{novoCavalo.Id}", novoCavalo);
-
 });
 
-
-app.MapPut("/api/Cavalos/{id:int}", (int id, CavalosEntradaDto dados) => 
+// Atualizar um cavalo
+app.MapPut("/api/Cavalos/{id:int}", async (int id, CavalosEntradaDto dados, CavalosDbContext banco) =>
 {
-    int indice = Cavalos.FindIndex(ListaDeCavalos => ListaDeCavalos.Id == id);
-    if(indice == -1)
+    var CavaloAtualizado = await banco.Cavalos.FindAsync(id);
+
+    if (CavaloAtualizado is null)
     {
         return Results.NotFound();
     }
 
-    var CavaloAtualizado = new CavalosDto(id, dados.Corredor);
+    if (string.IsNullOrWhiteSpace(dados.Corredor))
+    {
+        return Results.BadRequest("O corredor é obrigatório.");
+    }
 
-    Cavalos[indice] = CavaloAtualizado;
+    CavaloAtualizado.Corredor = dados.Corredor;
+
+    await banco.SaveChangesAsync();
 
     return Results.Ok(CavaloAtualizado);
 });
 
-app.MapDelete("/api/Corridas/{id:int}", (int id) => 
+// Excluir um cavalo
+app.MapDelete("/api/Cavalos/{id:int}", async (int id, CavalosDbContext banco) =>
 {
-    int indice = Cavalos.FindIndex(x => x.Id == id);
-    if(indice == -1)
+    var Cavalo = await banco.Cavalos.FindAsync(id);
+
+    if (Cavalo is null)
     {
         return Results.NotFound();
     }
-    Cavalos.RemoveAt(indice);
+
+    banco.Cavalos.Remove(Cavalo);
+
+    await banco.SaveChangesAsync();
+
     return Results.NoContent();
 });
 
 app.Run();
-//tsss
-
-record CavalosDto(int Id, string Corredor);
-record CavalosEntradaDto(string Corredor);
